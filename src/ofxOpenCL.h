@@ -5,53 +5,110 @@
 //
 //
 
-#ifndef __ofxOpenCL__
-#define __ofxOpenCL__
+#pragma once
+#include <memory>
 
-#include "ofMain.h"
-#include "ofxCLBuffer.h"
 #include "ofxCLBufferGL.h"
-#include "cl.hpp"
+#include "ofxCLBuffer.h"
+using namespace std;
+using namespace cl;
 
+// facade class that talks with OpenCL library
 class ofxOpenCL{
 
-public:
+protected:
 
-    // must specify device name and source code.
-    ofxOpenCL(const std::string &deviceName,
-              const std::string &clSource,
-              const std::string &kernelName,
-              const std::vector<unsigned> &workItems);
+
+    vector<cl::Platform> platforms;
+    
+    NDRange ndRange;
+    Program clProgram;
+    Context clContext;
+    CommandQueue clCommandQueue;
+    Kernel clKernel;
+    
+    map<string, shared_ptr<_ofxCLBuffer>> bufferMap;
+    map<string, ofxCLBufferGL> bufferGLMap;
+    
+    bool checkPlatforms();
+    bool checkDevices(const vector<cl::Device> &gpuDevices);
+    bool checkNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice);
+    void setNDRange(const vector<unsigned int> &requestedRange);
+    
+public:
+    /*!
+        @brief
+    */
+    ofxOpenCL(const string &clSource,
+              const string &kernelName,
+              const vector<unsigned int> &requestedNDRange,
+              bool &error);
+    
     ~ofxOpenCL();
     
-    void createNewBuffer(const std::string &bufferName, const void *data, unsigned int size, cl_mem_flags flag = CL_MEM_READ_WRITE);
-    void createNewBufferGL(const std::string &bufferName, std::vector<ofVec3f> defaultVertices, cl_mem_flags flag = CL_MEM_READ_WRITE) ;
-    void createNewBufferGL(const std::string &bufferName, std::vector<ofVec3f> defaultVertices, std::vector<ofFloatColor> defaultColors, cl_mem_flags flag = CL_MEM_READ_WRITE) ;
+    template <typename T>
+    inline void createNewBuffer(const string &bufferName,
+                                const vector<T> &data,
+                                const cl_mem_flags flag = CL_MEM_READ_WRITE);
 
+    std::size_t getNumberOfBuffer();
+    
+    ofVbo &getVbo(const string &bufferName);
 
-    unsigned int  getNumberOfBuffer();
-    unsigned int  getNumberOfGLBuffer();
-    ofVbo &getVbo(const std::string &bufferName);
+    // copy buffer RAM->VRAM
+    template <typename T>
+    bool updateBuffer(const string &bufferName, const vector<T> &data);
 
-    void updateBuffer(const std::string &bufferName, const void *data, unsigned int size);
-    void process(const std::vector<std::string> &bufferList);
-    
-protected:
-    void postDeviceProfile(const cl::Device &device) const;
+    // execute cl
+    void process(const vector<string> &bufferList);
 
-    cl::NDRange ndRange;
-    cl::Program clProgram;
-    cl::Context clContext;
+    // copy buffer VRAM->RAM
+    template <typename T>
+    bool retrieveBuffer(const string &bufferName, vector<T> &data);
     
-    cl::CommandQueue clCommandQueue;
-    cl::Kernel clKernel;
-    std::vector<cl::Device> devVector;
-    
-    std::map<std::string, ofxCLBuffer> bufferMap;
-    std::map<std::string, ofxCLBufferGL> bufferGLMap;
-    
+    const string getDeviceInfo();
+
 
 };
 
+template <typename T>
+inline void ofxOpenCL::createNewBuffer(const string &bufferName, const vector<T> &data, const cl_mem_flags flag){
+    
+    bufferMap.insert(pair<string, shared_ptr<_ofxCLBuffer>>(bufferName, shared_ptr<_ofxCLBuffer>(new ofxCLBuffer<T>(clContext, clCommandQueue, data, flag))));
+    
+}
 
-#endif
+std::size_t ofxOpenCL::getNumberOfBuffer(){
+    return bufferMap.size();
+}
+
+
+
+ofVbo &ofxOpenCL::getVbo(const string &bufferName){
+    map<string, ofxCLBufferGL>::iterator it = bufferGLMap.find(bufferName);
+    if(it != bufferGLMap.end()){
+        return (*it).second.getVbo();
+    }else{
+        // need to be fixed
+    }
+}
+
+
+template <typename T>
+inline bool ofxOpenCL::updateBuffer(const string &bufferName, const vector<T> &data){
+    map<string, shared_ptr<_ofxCLBuffer>>::iterator it = bufferMap.find(bufferName);
+    if(it == bufferMap.end()){return false;}
+    shared_ptr<_ofxCLBuffer> buffer = (*it).second;
+    auto rawBuffer = static_cast<ofxCLBuffer<T>>(buffer)->get();
+    rawBuffer.writeToCLBuffer(data, sizeof(T) * data.size());
+    return true;
+}
+
+template <typename T>
+inline bool ofxOpenCL::retrieveBuffer(const string &bufferName, vector<T> &data){
+    map<string, shared_ptr<_ofxCLBuffer>>::iterator it = bufferMap.find(bufferName);
+    if(it == bufferMap.end()){return false;}
+    shared_ptr<_ofxCLBuffer> buffer = (*it).second;
+    auto rawBuffer = static_cast<ofxCLBuffer<T>*>(buffer.get());
+    rawBuffer->readFromCLBuffer(data);
+}

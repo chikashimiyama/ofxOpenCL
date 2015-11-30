@@ -5,8 +5,7 @@
 //
 //
 
-#ifndef ____ofxOpenCLBufferGL__
-#define ____ofxOpenCLBufferGL__
+#pragma once
 
 #include "ofMain.h"
 #include "cl.hpp"
@@ -37,4 +36,3 @@ inline const ofxCLBufferGL::bufferMode ofxCLBufferGL::getBufferMode(){
     return mode;
 }
 
-#endif
