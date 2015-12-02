@@ -16,9 +16,9 @@ bool ofxOpenCL::checkPlatforms(){
     cl::Platform::get(&platforms);
     if(platforms.empty()){
         ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: No platform found... ";
-        return true;
+        return false;
     };
-    return false;
+    return true;
 }
 
 bool ofxOpenCL::checkDevices(const vector<cl::Device> &gpuDevices){
@@ -29,31 +29,73 @@ bool ofxOpenCL::checkDevices(const vector<cl::Device> &gpuDevices){
     return false;
 }
 
-bool ofxOpenCL::checkNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice){
+bool ofxOpenCL::checkGlobalNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice){
+    auto maxDimension = targetDevice.getInfo<CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS>();
+    if( requestedRange.size() > maxDimension){return false;}
+    
     auto itemSizes = targetDevice.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
     for(int i = 0; i < requestedRange.size(); i++){
-        if(requestedRange[i] >= itemSizes[i]){
-            ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: NDRange exceeds limit...";
-            return true;
+        if(requestedRange[i] > itemSizes[i]){
+            ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: global NDRange exceeds limit...";
+            return false;
         }
     }
-    return false;
-}
-void ofxOpenCL::setNDRange(const vector<unsigned int> &requestedRange){
-    switch (requestedRange.size()) {
-        case 1:
-            ndRange = NDRange(requestedRange[0]); break;
-        case 2:
-            ndRange = NDRange(requestedRange[0], requestedRange[1]); break;
-        case 3:
-            ndRange = NDRange(requestedRange[0], requestedRange[1], requestedRange[2]); break;
-    }
+    return true;
 }
 
-ofxOpenCL::ofxOpenCL(const string &clSource, const string &kernelName, const vector<unsigned int> &requestedRange, bool &error){
+bool ofxOpenCL::checkLocalNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice){
+    auto maxDimension = targetDevice.getInfo<CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS>();
+    if( requestedRange.size() > maxDimension){return false;}
+    
+    auto itemSizes = targetDevice.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
+    for(int i = 0; i < requestedRange.size(); i++){
+        if(requestedRange[i] > itemSizes[i]){
+            ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: work group NDRange exceeds the global Max NDRange...";
+            return false;
+        }
+    }
+    
+    auto maxGroupSize = targetDevice.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+    auto totalGloabalWorkItems = 1, totalLocalWorkItems = 1;
+    for_each(itemSizes.begin(), itemSizes.end(), [&totalGloabalWorkItems](unsigned int size){
+        totalGloabalWorkItems *= size;
+    });
+
+    for_each(itemSizes.begin(), itemSizes.end(), [&totalLocalWorkItems](unsigned int size){
+        totalLocalWorkItems *= size;
+    });
+
+    if(totalGloabalWorkItems/ totalGloabalWorkItems > maxGroupSize){
+        ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: too many work groups...";
+        return false;
+    }
+    
+    if(globalNDRange.dimensions() != requestedRange.size()){
+        ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: dimensionality of local and global ND Range don't match....";
+        return false;
+    }
+    
+    return true;
+}
+
+bool ofxOpenCL::setGlobalNDRange(const vector<unsigned int> &requestedRange){
+    switch (requestedRange.size()) {
+        case 1:
+            globalNDRange = NDRange(requestedRange[0]); break;
+        case 2:
+            globalNDRange = NDRange(requestedRange[0], requestedRange[1]); break;
+        case 3:
+            globalNDRange = NDRange(requestedRange[0], requestedRange[1], requestedRange[2]); break;
+        default:
+            return false;
+    }
+    return true;
+}
+
+ofxOpenCL::ofxOpenCL(const string &clSource, const string &kernelName, const vector<unsigned int> &requestedRange, const vector<unsigned int> &requestedLocalRange, bool &error){
     error = false;
     cl_int err;
-    if(checkPlatforms()){ error = true; return; }
+    if(!checkPlatforms()){ error = true; return; }
     
     CGLContextObj kCGLContext = CGLGetCurrentContext();
     CGLShareGroupObj kCGLShareGroup = CGLGetShareGroup(kCGLContext);
@@ -66,25 +108,40 @@ ofxOpenCL::ofxOpenCL(const string &clSource, const string &kernelName, const vec
     cl::Device device = gpuDevices[0]; // use first device
     ofLog() << "use " << device.getInfo<CL_DEVICE_NAME>() << " for OpenCL.";
 
+    if(!checkGlobalNDRange(requestedRange, device)){ error = true; return; }
+    if(!setGlobalNDRange(requestedRange)){error = true; return; };
+
+    if(!requestedRange.empty()){
+        if(!checkLocalNDRange(requestedRange, device)){ error = true; return;}
+    }
     
-    if(checkNDRange(requestedRange, device)){ error = true; return; }
-    setNDRange(requestedRange);
     
     
     cl::Program::Sources source(1, make_pair(clSource.c_str(),clSource.length()));
     clProgram = cl::Program(clContext, source);
 
-    if(clProgram.build(gpuDevices) != CL_SUCCESS){return; }
+    if(clProgram.build(gpuDevices) != CL_SUCCESS){
+        error = true;
+        ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: openCL program. compile error.";
+        return;
+    }
     clCommandQueue = cl::CommandQueue(clContext, device, 0, &err);
-    if(error != CL_SUCCESS){return;}
+    if(err != CL_SUCCESS){
+        error = true;
+        ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: command queue not created";
+        return;
+    }
     clKernel = cl::Kernel(clProgram, kernelName.c_str(), &err);
-    if(error != CL_SUCCESS){return;}
+    if(err != CL_SUCCESS){
+        error = true;
+        ofLog(OF_LOG_FATAL_ERROR) << "ofxOpenCL: compilation of CL program unsuccessful";
+        return;
+    }
 }
 
 ofxOpenCL::~ofxOpenCL(){
+
 }
-
-
 
 void ofxOpenCL::process(const vector<string> &bufferList){
     
@@ -113,7 +170,7 @@ void ofxOpenCL::process(const vector<string> &bufferList){
         ofLog(OF_LOG_ERROR) << "ofxOpenCL::process\n"<< bufferList[i] << " argument not found.";
     }
     
-    clCommandQueue.enqueueNDRangeKernel(clKernel, cl::NullRange, ndRange, cl::NullRange);
+    clCommandQueue.enqueueNDRangeKernel(clKernel, cl::NullRange, globalNDRange, localNDRange);
     clCommandQueue.finish();
 
 }

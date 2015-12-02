@@ -1,25 +1,45 @@
 #include "ofApp.h"
 #include "ofxOpenCL.h"
+#include <chrono>
 //--------------------------------------------------------------
 void ofApp::setup(){
 
     
     auto buffer = ofBufferFromFile(ofToDataPath("Example.cl"));
     bool error;
-    vector<unsigned int>ndRange = {10};
-    auto openCL = ofxOpenCL(buffer.getText(), "hello_kernel", ndRange, error);
-    if(error != CL_SUCCESS){
+    auto openCL = ofxOpenCL(buffer.getText(), "direct_convolution", {512}, {}, error);
+    if(error){
         abort();
     }
-    vector<int> b = {0,1,2,3,4,5,6,7,8,9};
-    vector<int> a = {0,1,2,3,4,5,6,7,8,9};
-    vector<int> result  = {0,0,0,0,0,0,0,0,0,0};
-
+    
+    // count 3D from 0 to 999
+    vector<int> a(512), b(512), c(1024); // access all work items
+    for(int i = 0; i < 50; i++){ a[i] = i;  b[i] = 0;}
+    
+    // impulses for test
+    b[0] = 1;
+    b[60] = 1;
+    b[150] = 1;
+    
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    start = std::chrono::system_clock::now();
     openCL.createNewBuffer("a", a, CL_MEM_WRITE_ONLY);
     openCL.createNewBuffer("b", b, CL_MEM_WRITE_ONLY);
-    openCL.createNewBuffer("result", result, CL_MEM_READ_ONLY);
-    openCL.process({"a","b","result"});
-    openCL.retrieveBuffer("result", result);
+    openCL.createNewBuffer("c", c, CL_MEM_READ_ONLY);
+    openCL.process({"a","b","c"});
+    openCL.retrieveBuffer("c", c);
+    end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    ofLog() << "elapsed time: " << elapsed_seconds.count() << "s\n";
+
+    
+    for (int x : c){
+        cout << x << " ";
+    }
+    
+    //
+
+    
     
 }
 

@@ -1,18 +1,18 @@
 # ofxOpenCL
-Simplified OpenCL addon for OpenFrameworks
+Ultra Simple OpenCL addon for OpenFrameworks
 
-This OpenCL wrapper addon provides oF users a simplified interface for utilizing the power of GPU in their project.
+This OpenCL wrapper addon provides oF users a simplified interface for utilizing the power of GPU in their projects.
 
-Users of this library should only study and use member fucntions of ofxOpenCL, the constructors of other classes are defined as protected functions. Thus these classes can be instantiated only by their friend class, ofxOpenCL.
+Users of this library should only study and use member fucntions of ofxOpenCL, the constructors of other classes are defined as protected functions. Thus, these classes can be instantiated only by their friend class, ofxOpenCL.
 
-The library is exclusively tested on MacOS, and uses only one GPU. For more advanced use of OpenCL, use cl.hpp directly in your project.
+The library is exclusively tested on MacOS, and uses only one GPU. For more advanced use of OpenCL, use [cl.hpp or cl2.hpp](https://www.khronos.org/registry/cl/) directly in your project.
 
 ## How to use
 
-This section explains a primitive usage of ofxOpenCL with an example.
+This section explains how to use ofxOpenCL with a simple example.
 
 ### Loading OpenCL Program
-To use OpenCL. you need to prepare a program to execute in OpenCL. The source file of this code should has a .cl extension. 
+To use OpenCL, you need to prepare a program to execute in OpenCL. The source file of this code should has a .cl extension. 
 
 In the oF program, you can load .cl file onto a ofBuffer by using ofBufferFromFile function.
 
@@ -21,7 +21,7 @@ For example, if your .cl file is located in the data folder of the project, the 
 ```
 auto buffer = ofBufferFromFile(ofToDataPath("Example.cl")); 
 ```
-now the "buffer" is keeping a OpenCL program as a string. 
+now the "buffer" is keeping a OpenCL program as a std::string. 
 
 ### Compilation
 Then, you pass the code string as the second argument of the constructor of the ofxOpenCL. Then, the program will be compiled.

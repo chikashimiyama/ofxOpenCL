@@ -15,26 +15,23 @@ using namespace cl;
 
 // facade class that talks with OpenCL library
 class ofxOpenCL{
-
 protected:
-
-
     vector<cl::Platform> platforms;
-    
-    NDRange ndRange;
+    NDRange globalNDRange;
+    NDRange localNDRange = NullRange;
     Program clProgram;
     Context clContext;
     CommandQueue clCommandQueue;
     Kernel clKernel;
-    
     map<string, shared_ptr<_ofxCLBuffer>> bufferMap;
     map<string, ofxCLBufferGL> bufferGLMap;
-    
     bool checkPlatforms();
     bool checkDevices(const vector<cl::Device> &gpuDevices);
-    bool checkNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice);
-    void setNDRange(const vector<unsigned int> &requestedRange);
-    
+    bool checkGlobalNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice);
+    bool checkLocalNDRange(const vector<unsigned int> &requestedRange, const Device &targetDevice);
+    bool setGlobalNDRange(const vector<unsigned int> &requestedRange);
+    bool setLocalNDRange(const vector<unsigned int> &requestedRange);
+
 public:
     /*!
         @brief
@@ -42,6 +39,7 @@ public:
     ofxOpenCL(const string &clSource,
               const string &kernelName,
               const vector<unsigned int> &requestedNDRange,
+              const vector<unsigned int> &requestedLocalNDRange,
               bool &error);
     
     ~ofxOpenCL();
@@ -55,6 +53,7 @@ public:
     
     ofVbo &getVbo(const string &bufferName);
 
+    
     // copy buffer RAM->VRAM
     template <typename T>
     bool updateBuffer(const string &bufferName, const vector<T> &data);
@@ -65,24 +64,17 @@ public:
     // copy buffer VRAM->RAM
     template <typename T>
     bool retrieveBuffer(const string &bufferName, vector<T> &data);
-    
     const string getDeviceInfo();
-
-
 };
 
 template <typename T>
 inline void ofxOpenCL::createNewBuffer(const string &bufferName, const vector<T> &data, const cl_mem_flags flag){
-    
     bufferMap.insert(pair<string, shared_ptr<_ofxCLBuffer>>(bufferName, shared_ptr<_ofxCLBuffer>(new ofxCLBuffer<T>(clContext, clCommandQueue, data, flag))));
-    
 }
 
 std::size_t ofxOpenCL::getNumberOfBuffer(){
     return bufferMap.size();
 }
-
-
 
 ofVbo &ofxOpenCL::getVbo(const string &bufferName){
     map<string, ofxCLBufferGL>::iterator it = bufferGLMap.find(bufferName);
@@ -92,7 +84,6 @@ ofVbo &ofxOpenCL::getVbo(const string &bufferName){
         // need to be fixed
     }
 }
-
 
 template <typename T>
 inline bool ofxOpenCL::updateBuffer(const string &bufferName, const vector<T> &data){
